@@ -1,0 +1,20 @@
+[Unit]
+Description=AeroDataBox MLAT client
+After=network-online.target dump1090-fa.service aerodatabox-feed.service
+Wants=network-online.target
+
+[Service]
+DynamicUser=yes
+EnvironmentFile=/etc/default/adsblol
+ExecStart=/usr/local/share/adsblol/venv/bin/mlat-client \
+  --input-type dump1090 --input-connect 127.0.0.1:30005 \
+  --server feed.aerodatabox.com:31090 \
+  --lat ${LATITUDE} --lon ${LONGITUDE} --alt ${ALTITUDE} \
+  --user scott4740-frankfort \
+  --uuid-file /etc/aerodatabox/uuid
+Restart=always
+RestartSec=30
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

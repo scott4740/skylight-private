@@ -1,0 +1,1 @@
+import{g as r,j as t,r as e}from"./geo-CTCpOXEy.js";import{D as o}from"./display-B6URm6Ml.js";import"./useStream-BHyqTQPV.js";import"./renderer-Bldp53om.js";r.createRoot(document.getElementById("root")).render(t.jsx(e.StrictMode,{children:t.jsx(o,{nearestPanel:!0})}));

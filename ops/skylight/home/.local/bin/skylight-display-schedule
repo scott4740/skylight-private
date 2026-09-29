@@ -1,0 +1,15 @@
+#!/bin/sh
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+
+for socket in "$XDG_RUNTIME_DIR"/wayland-*; do
+    [ -S "$socket" ] || continue
+    export WAYLAND_DISPLAY="${socket##*/}"
+
+    case "$(TZ=America/Chicago date +%H)" in
+        22|23|00|01|02|03|04|05|06|07) mode=off ;;
+        *) mode=on ;;
+    esac
+
+    /usr/bin/wlopm --"$mode" '*'
+    exit $?
+done

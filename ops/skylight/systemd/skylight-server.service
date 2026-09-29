@@ -1,0 +1,22 @@
+# systemd unit for the Skylight server (data + WebSocket + serves the built web app).
+# Installed to /etc/systemd/system/ by install-on-pi.sh.
+[Unit]
+Description=Skylight server
+After=network-online.target dump1090-fa.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/skylight
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOST=0.0.0.0
+Environment=DATA_SOURCE=radio
+Environment=AIRCRAFT_JSON_URL=http://10.0.5.20:8080/data/aircraft.json
+ExecStart=/usr/bin/pnpm -F server start
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

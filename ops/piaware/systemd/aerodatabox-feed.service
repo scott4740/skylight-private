@@ -1,0 +1,19 @@
+[Unit]
+Description=AeroDataBox ADS-B feed (readsb relay from dump1090-fa)
+After=network-online.target dump1090-fa.service
+Wants=network-online.target
+
+[Service]
+DynamicUser=yes
+ExecStart=/usr/local/share/adsblol/feed-adsblol --net-only --quiet \
+  --net-ri-port 0 --net-ro-port 0 --net-sbs-port 0 --net-bi-port 0 --net-bo-port 0 \
+  --net-beast-reduce-interval 0.5 --net-heartbeat 60 \
+  --net-connector 127.0.0.1,30005,beast_in \
+  --net-connector feed.aerodatabox.com,30004,beast_reduce_plus_out \
+  --uuid-file /etc/aerodatabox/uuid
+Restart=always
+RestartSec=30
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

@@ -38,6 +38,8 @@ export interface Aircraft {
   /** Human type name, e.g. "Boeing 737-800". */
   typeName?: string;
   airline?: string;
+  routeSource?: "flightaware";
+  routeFlightId?: string;
   origin?: string;
   destination?: string;
   /** Destination/origin city + coordinates (for ghost arcs + local time). */

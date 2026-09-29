@@ -2,6 +2,10 @@
 // and (in production) serves the built web app. Binds 0.0.0.0 so the control
 // panel is reachable from your phone on the LAN.
 
+import { homedir } from "node:os";
+import { NearestDemand } from "./nearest-demand.js";
+import { AeroRoutes } from "./enrich/aeroapi.js";
+import { nearbyAircraft } from "@shared/nearest.js";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -72,6 +76,10 @@ async function main(): Promise<void> {
   const satCatStore = new SatCatStore(resolve(DATA_DIR, "satcat-cache.json"));
   await satCatStore.load();
 
+  const demand = new NearestDemand(resolve(DATA_DIR, "nearest-demand"));
+  const aero = new AeroRoutes({ onDecision: (ac, outcome) => demand.decision(ac, outcome), keyPath: resolve(homedir(), ".config/skylight/aeroapi.key"), ledgerPath: resolve(DATA_DIR, "aeroapi-budget.json") });
+  const snapshot = () => { const s = poller.getSnapshot(); return { ...s, aircraft: aero.decorate(s.aircraft) }; };
+
   const app = express();
 
   // DNS-rebinding gate. Untrusted browsers can resolve attacker.com to the
@@ -101,7 +109,7 @@ async function main(): Promise<void> {
   const server = createServer(app);
   const hub = new Hub(server, {
     store,
-    getSnapshot: () => poller.getSnapshot(),
+    getSnapshot: () => snapshot(),
     getStatus: () => poller.getStatus(),
     getSfoGround: () => sfoGround.getSnapshot(),
     isOriginAllowed: (origin) => {
@@ -121,8 +129,8 @@ async function main(): Promise<void> {
     apiPollMs: API_POLL_MS,
     getConfig: () => store.get(),
     enricher,
-    onSnapshot: (now, aircraft) => hub.broadcastAircraft(now, aircraft),
-    onStatus: (status) => hub.broadcastStatus(status),
+    onSnapshot: (now, aircraft) => { demand.observe(aircraft, store.get()); hub.broadcastAircraft(now, aero.decorate(aircraft)); },
+    onStatus: (status) => { if (!status.ok) demand.observe([], store.get(), false); hub.broadcastStatus(status); },
   });
 
   // SFO surface traffic (airplanes.live) — the "who's next" panel on the TV
@@ -145,7 +153,19 @@ async function main(): Promise<void> {
     }
   });
   app.post("/api/config/reset", (_req, res) => res.json(store.reset()));
-  app.get("/api/aircraft", (_req, res) => res.json(poller.getSnapshot()));
+  app.get("/api/aircraft", (_req, res) => res.json(snapshot()));
+  app.get("/api/aeroapi/status", (_req, res) => res.json({ ...aero.status(), daytimeTracking: demand.status() }));
+  app.post("/api/aeroapi/nearest", (req, res) => {
+    if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}` && req.headers.origin !== `https://${req.headers.host}`) return res.sendStatus(403);
+    const status = poller.getStatus();
+    const cfg = store.get();
+    const age = (Date.now() - (status.lastOk ?? 0)) / 1000;
+    const nearest = status.ok && age < cfg.staleSec ? nearbyAircraft(poller.getSnapshot().aircraft, cfg, Math.max(0, age))[0]?.ac : undefined;
+    // Browsers cannot cause arbitrary flight lookups or query every map aircraft.
+    if (!nearest || nearest.hex !== req.body?.hex) return res.status(409).json({ message: "Target is no longer nearest" });
+    void aero.lookup(nearest);
+    res.json(aero.status());
+  });
   app.get("/api/status", (_req, res) => res.json(poller.getStatus()));
   app.get("/api/tle", async (_req, res) => res.json(await tleStore.get()));
   app.get("/api/satcat", async (_req, res) => res.json(await satCatStore.get()));

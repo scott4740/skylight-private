@@ -1,0 +1,8 @@
+Captured 2026-09-29 23:11 UTC on skylight
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+node v22.23.2  pnpm 10.28.2
+display manager: /usr/lib/systemd/system/lightdm.service
+lightdm: autologin-user=pi
+lightdm: autologin-session=LXDE-pi-labwc
+upstream: https://github.com/cpaczek/skylight.git
+based on upstream commit: 1f333f9

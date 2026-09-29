@@ -31,3 +31,16 @@ tracker/models/
 # stream credentials (instance env files) — examples stay committed
 stream/.env*
 !stream/.env*.example
+
+# --- local Skylight additions (ops/collect.sh) ---
+# runtime state, logs, installer backups, keys
+/data/
+server/data/
+/backups/
+server/backups/
+*.key
+*.bak
+*.bak-*
+*.backup-*
+*.before-*
+*.tmp

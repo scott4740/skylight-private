@@ -1,0 +1,17 @@
+Captured 2026-09-29 23:11 UTC on piaware
+PRETTY_NAME="Raspbian GNU/Linux 11 (bullseye)"
+piaware 11.1
+dump1090-fa 11.0~bpo11+1
+piaware 11.1~bpo11+1
+adsblol readsb commit d9a4c62655490e70d07704e207738bb9c6cffde1
+adsblol mlat-client commit efcb206fb88203d8a672b41ba3c1941f7a3f3050
+service dump1090-fa: enabled / active
+service piaware: enabled / active
+service adsblol-feed: enabled / active
+service adsblol-mlat: enabled / active
+service tar1090: enabled / active
+service tar1090-adsblol: enabled / active
+service aerodatabox-feed: enabled / active
+service aerodatabox-mlat: enabled / active
+aerodatabox uuid file present: yes
+adsblol uuid file present: yes
