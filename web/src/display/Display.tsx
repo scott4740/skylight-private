@@ -6,6 +6,7 @@ import { useStream } from "../lib/useStream.js";
 import { useAmbientMode, kioskRequested } from "../lib/useAmbientMode.js";
 import { Renderer, type Pickable } from "./renderer.js";
 import { PlaneCard } from "./PlaneCard.js";
+import { NearestPanel, useNearest } from "./NearestPanel.js";
 import { SatelliteCard } from "./SatelliteCard.js";
 
 const THEMES: Theme[] = ["ambient", "telemetry", "focus"];
@@ -20,8 +21,9 @@ const CARD_OFFSET_Y = 80;
 // so a plain click (e.g. on the ✕ button) never gets eaten as a no-op drag.
 const DRAG_THRESHOLD_PX = 4;
 
-export function Display() {
+export function Display({ nearestPanel = false }: { nearestPanel?: boolean }) {
   const { state, conn } = useStream("display");
+  const nearest = useNearest(state, nearestPanel);
   const ambient = useAmbientMode();
   const isKiosk = kioskRequested();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -79,6 +81,7 @@ export function Display() {
     if (!canvasRef.current) return;
     const r = new Renderer(canvasRef.current, () => configRef.current);
     rendererRef.current = r;
+    r.setSpotlightMode(nearestPanel);
     r.start();
     const onResize = () => r.resize();
     window.addEventListener("resize", onResize);
@@ -88,6 +91,10 @@ export function Display() {
       rendererRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    rendererRef.current?.setSpotlight(nearest.target?.ac.hex ?? null);
+  }, [nearest.target?.ac.hex]);
 
   // Feed snapshots.
   useEffect(() => {
@@ -342,7 +349,7 @@ export function Display() {
   return (
     <div
       ref={rootRef}
-      className="display-root"
+      className={`display-root ${nearestPanel ? "with-nearest" : ""}`}
       style={{
         position: "relative",
         cursor: "none",
@@ -354,6 +361,8 @@ export function Display() {
       onClick={onClick}
     >
       <canvas ref={canvasRef} className="display-canvas" />
+
+      {nearestPanel && cfg && <NearestPanel {...nearest} cfg={cfg} />}
 
       {selected && (
         <svg

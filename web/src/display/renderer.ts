@@ -236,6 +236,11 @@ export class Renderer {
   private hoveredId: string | null = null;
   private lastFrameDt = 0.016;
   private selectedId: string | null = null;
+  private spotlightId: string | null = null;
+  private spotlightMode = false;
+
+  setSpotlight(id: string | null): void { this.spotlightId = id; }
+  setSpotlightMode(enabled: boolean): void { this.spotlightMode = enabled; }
   private hoverScale = new Map<string, number>();
 
   constructor(
@@ -568,7 +573,7 @@ export class Renderer {
     const byNear = [...visible].reverse(); // nearest first
     this.drawLabels(cfg, byNear);
 
-    if (cfg.theme === "focus" && byNear.length) this.drawDetailPanel(cfg, byNear[0]);
+    if (cfg.theme === "focus" && !this.spotlightMode && byNear.length) this.drawDetailPanel(cfg, byNear[0]);
   }
 
   /**
@@ -1224,6 +1229,13 @@ export class Renderer {
 
     ctx.save();
     ctx.translate(v.p.x, v.p.y);
+    if (v.tr.ac.hex === this.spotlightId) {
+      ctx.strokeStyle = `rgba(131,232,212,${v.alpha})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, Math.max(24, s * 1.35), 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.rotate(v.heading + Math.PI / 2);
 
     // Soft halo — restrained so the silhouette reads as an aircraft.

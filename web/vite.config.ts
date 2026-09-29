@@ -30,6 +30,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: resolve(__dirname, "index.html"),
+        nearest: resolve(__dirname, "nearest.html"),
         control: resolve(__dirname, "control.html"),
         tracker: resolve(__dirname, "tracker.html"),
         tv: resolve(__dirname, "tv.html"),
