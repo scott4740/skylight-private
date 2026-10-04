@@ -71,7 +71,7 @@ export function pickLeg(flights: AdbFlight[], ac: Aircraft, now: number): { leg:
 }
 
 export type AdbOutcome = "adb_route" | "adb_cache" | "adb_miss" | "adb_miss_cache" | "adb_cap" | "adb_backoff" | "adb_busy"
-  | "adb_no_key" | "adb_blocked" | "adb_interval" | "adb_error";
+  | "adb_no_key" | "adb_blocked" | "adb_interval" | "adb_error" | "adb_no_credits";
 
 interface Ledger { version: 1; calls: number[] } // epoch ms of each call (2 credits each)
 interface Options { keyPath: string; dataDir: string; fetcher?: typeof fetch; now?: () => number; dailyCap: () => number; header?: string }
@@ -84,6 +84,7 @@ export class AdbRoutes {
   private busy = false;
   private retryAfter = 0;
   private lastCall = 0;
+  private creditsEmptySince: number | null = null;
   message = "Ready";
   private readonly now: () => number;
   private readonly fetcher: typeof fetch;
@@ -124,6 +125,14 @@ export class AdbRoutes {
     writeFileSync(tmp, JSON.stringify(this.ledger), { mode: 0o600 });
     const fd = openSync(tmp, "r"); try { fsyncSync(fd); } finally { closeSync(fd); }
     renameSync(tmp, this.ledgerPath);
+  }
+
+  /** Remove a call from the ledger when AeroDataBox did not bill it (errors, 402, timeouts). */
+  private refund(at: number) {
+    const i = this.ledger.calls.lastIndexOf(at);
+    if (i < 0) return;
+    this.ledger.calls.splice(i, 1);
+    try { this.saveLedger(); } catch { /* the next save retries */ }
   }
 
   private log(event: Record<string, unknown>) {
@@ -167,14 +176,29 @@ export class AdbRoutes {
         status = res.status;
         if (status === 200) body = await res.json();
       } catch {
+        this.refund(now);
         this.log({ event: "query", callsign, aircraft: ac.hex, httpStatus: status || null, outcome: "network_error", durationMs: this.now() - started });
         this.retryAfter = now + 5 * MINUTE; this.message = "AeroDataBox unreachable; retrying in 5 minutes";
         return "adb_error";
       }
-      if (status === 401 || status === 403) {
-        this.blocked = true; this.message = `AeroDataBox rejected the key (HTTP ${status}); lookups stopped`;
+      // Only 200 and 204 are counted as billed; everything else is refunded.
+      if (status !== 200 && status !== 204) this.refund(now);
+      if (status === 401) {
+        this.blocked = true; this.message = "AeroDataBox rejected the key (HTTP 401); lookups stopped until restart";
         this.log({ event: "query", callsign, aircraft: ac.hex, httpStatus: status, outcome: "auth_error" });
         return "adb_blocked";
+      }
+      if (status === 402 || status === 403) {
+        // 402 = credit balance empty. 403 is treated the same way rather than
+        // stopping for good: check again every 15 minutes, so converting
+        // credits restores lookups without a restart.
+        this.creditsEmptySince ??= now;
+        this.retryAfter = now + 15 * MINUTE;
+        this.message = status === 402
+          ? "AeroDataBox credit balance is empty: convert credits on My Receivers (rechecking every 15 min)"
+          : "AeroDataBox refused the request (HTTP 403); rechecking every 15 min";
+        this.log({ event: "query", callsign, aircraft: ac.hex, httpStatus: status, outcome: status === 402 ? "no_credits" : "forbidden" });
+        return "adb_no_credits";
       }
       if (status === 429 || status >= 500) {
         this.retryAfter = now + (status === 429 ? 2 : 5) * MINUTE;
@@ -182,6 +206,7 @@ export class AdbRoutes {
         this.log({ event: "query", callsign, aircraft: ac.hex, httpStatus: status, outcome: "retry_later" });
         return "adb_error";
       }
+      if (status === 200 || status === 204) this.creditsEmptySince = null;
       const flights = status === 200 && Array.isArray(body) ? body as AdbFlight[] : [];
       const { leg, why } = pickLeg(flights, ac, now);
       const route = leg ? toRoute(leg) : null;
@@ -202,6 +227,7 @@ export class AdbRoutes {
     const t = this.now();
     return { enabled: !!this.key && !this.blocked, message: this.message, creditsToday: this.creditsToday(t),
       dailyCap: this.options.dailyCap(), callsToday: this.creditsToday(t) / ADB_CREDITS_PER_CALL,
+      creditsEmptySince: this.creditsEmptySince ? new Date(this.creditsEmptySince).toISOString() : null,
       creditsPerCall: ADB_CREDITS_PER_CALL, backoffUntil: t < this.retryAfter ? new Date(this.retryAfter).toISOString() : null,
       ledger: this.ledgerPath };
   }

@@ -62,30 +62,49 @@ let nextAttemptAt = 0; // backoff after a failed initial load
 
 // ---------- CSV ----------
 
-export function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let quoted = false;
-  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (quoted) {
-      if (c === '"') {
-        if (text[i + 1] === '"') { field += '"'; i++; }
-        else quoted = false;
-      } else field += c;
-    } else if (c === '"') quoted = true;
-    else if (c === ",") { row.push(field); field = ""; }
-    else if (c === "\n" || c === "\r") {
-      if (c === "\r" && text[i + 1] === "\n") i++;
-      row.push(field); field = "";
-      if (row.length > 1 || row[0] !== "") rows.push(row);
-      row = [];
-    } else field += c;
+/** Parse one CSV line. Fast path for lines without quotes (almost all of them). */
+function parseLine(line: string): string[] {
+  if (line.indexOf('"') < 0) return line.split(",");
+  const out: string[] = [];
+  let i = 0;
+  while (i <= line.length) {
+    if (line[i] === '"') {
+      let j = i + 1, val = "";
+      for (;;) {
+        const q = line.indexOf('"', j);
+        if (q < 0) { val += line.slice(j); j = line.length; break; }
+        val += line.slice(j, q);
+        if (line[q + 1] === '"') { val += '"'; j = q + 2; continue; }
+        j = q + 1; break;
+      }
+      out.push(val);
+      const comma = line.indexOf(",", j);
+      i = comma < 0 ? line.length + 1 : comma + 1;
+    } else {
+      const comma = line.indexOf(",", i);
+      out.push(comma < 0 ? line.slice(i) : line.slice(i, comma));
+      i = comma < 0 ? line.length + 1 : comma + 1;
+    }
   }
-  if (field !== "" || row.length) { row.push(field); rows.push(row); }
-  return rows;
+  return out;
+}
+
+/** Iterate CSV rows without building the whole table as arrays (keeps memory flat). */
+function* csvRows(text: string): Generator<string[]> {
+  let start = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+  while (start < text.length) {
+    let end = text.indexOf("\n", start);
+    if (end < 0) end = text.length;
+    let line = text.slice(start, end);
+    if (line.endsWith("\r")) line = line.slice(0, -1);
+    start = end + 1;
+    if (line) yield parseLine(line);
+  }
+}
+
+/** Kept for tests and callers that want a full table. */
+export function parseCsv(text: string): string[][] {
+  return [...csvRows(text)];
 }
 
 function indexer(header: string[]) {
@@ -96,34 +115,45 @@ function indexer(header: string[]) {
   };
 }
 
+/** Copy a string so it doesn't keep a slice of the big source text alive. */
+const own = (s: string) => (" " + s).slice(1);
+
 function buildTables(routesCsv: string, airportsCsv: string): Tables {
   const routes = new Map<string, string[]>();
-  const [rh, ...rrows] = parseCsv(routesCsv);
-  const rget = indexer(rh);
-  for (const r of rrows) {
-    const cs = rget(r, "callsign").toUpperCase();
-    const codes = rget(r, "airportcodes");
-    if (cs && codes) routes.set(cs, codes.toUpperCase().split("-").filter(Boolean));
+  const codePool = new Map<string, string>(); // one shared string per airport code
+  const intern = (c: string) => { let v = codePool.get(c); if (v === undefined) { v = own(c); codePool.set(c, v); } return v; };
+  const rows = csvRows(routesCsv);
+  const first = rows.next();
+  if (!first.done) {
+    const rget = indexer(first.value);
+    for (const r of rows) {
+      const cs = rget(r, "callsign").toUpperCase();
+      const codes = rget(r, "airportcodes");
+      if (cs && codes) routes.set(own(cs), Object.freeze(codes.toUpperCase().split("-").filter(Boolean).map(intern)) as string[]);
+    }
   }
 
   const airports = new Map<string, VrsAirport>();
-  const [ah, ...arows] = parseCsv(airportsCsv);
-  const aget = indexer(ah);
-  for (const r of arows) {
-    const lat = Number(aget(r, "latitude"));
-    const lon = Number(aget(r, "longitude"));
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-    const a: VrsAirport = {
-      code: aget(r, "code").toUpperCase(),
-      icao: aget(r, "icao").toUpperCase(),
-      iata: aget(r, "iata").toUpperCase(),
-      name: aget(r, "name"),
-      location: aget(r, "location"),
-      lat,
-      lon,
-    };
-    if (a.code) airports.set(a.code, a);
-    if (a.icao && !airports.has(a.icao)) airports.set(a.icao, a);
+  const arows = csvRows(airportsCsv);
+  const afirst = arows.next();
+  if (!afirst.done) {
+    const aget = indexer(afirst.value);
+    for (const r of arows) {
+      const lat = Number(aget(r, "latitude"));
+      const lon = Number(aget(r, "longitude"));
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      const a: VrsAirport = {
+        code: intern(aget(r, "code").toUpperCase()),
+        icao: intern(aget(r, "icao").toUpperCase()),
+        iata: intern(aget(r, "iata").toUpperCase()),
+        name: own(aget(r, "name")),
+        location: own(aget(r, "location")),
+        lat,
+        lon,
+      };
+      if (a.code) airports.set(a.code, a);
+      if (a.icao && !airports.has(a.icao)) airports.set(a.icao, a);
+    }
   }
   if (routes.size === 0 || airports.size === 0) {
     throw new Error(`VRS tables empty (routes=${routes.size}, airports=${airports.size})`);

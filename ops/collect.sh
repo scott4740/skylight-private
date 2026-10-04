@@ -13,6 +13,14 @@ echo "== Skylight files"
 rm -rf "$OPS/skylight" "$OPS/piaware"
 mkdir -p "$OPS/skylight/systemd" "$OPS/skylight/home" "$OPS/piaware"
 cp /etc/systemd/system/skylight-server.service "$OPS/skylight/systemd/" && echo "  skylight-server.service"
+if ls /etc/systemd/system/skylight-server.service.d/*.conf >/dev/null 2>&1; then
+  mkdir -p "$OPS/skylight/systemd/skylight-server.service.d"
+  cp /etc/systemd/system/skylight-server.service.d/*.conf "$OPS/skylight/systemd/skylight-server.service.d/" && echo "  skylight-server.service.d/"
+fi
+if ls /etc/systemd/journald.conf.d/*.conf >/dev/null 2>&1; then
+  mkdir -p "$OPS/skylight/journald.conf.d"
+  cp /etc/systemd/journald.conf.d/*.conf "$OPS/skylight/journald.conf.d/" && echo "  journald.conf.d/"
+fi
 for f in .local/bin/skylight-kiosk.sh .local/bin/skylight-display-schedule \
          .config/labwc/autostart .config/labwc/environment .config/labwc/rc.xml .config/labwc/rcgreeter.xml; do
   if [ -f "$HOME/$f" ]; then mkdir -p "$(dirname "$OPS/skylight/home/$f")"; sed -E "$REDACT" "$HOME/$f" > "$OPS/skylight/home/$f"

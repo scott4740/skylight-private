@@ -95,9 +95,24 @@ step(); calls.length = 0; await aero.lookup(ac("DAL8", 41.5, -87.8, 60));
 check("invalid schedule file stops paid calls", calls.length === 0 && last() === "DAL8:lookups_schedule_invalid", last());
 writeFileSync(sched, JSON.stringify({ version: 1, paused: false, pausedUntil: null, away: [], adbDailyCredits: 900 }));
 
+// --- empty credit balance (HTTP 402)
+adbStatus = 402; step(); calls.length = 0;
+const before402 = (aero.status() as any).aerodatabox.creditsToday;
+await aero.lookup(ac("SWA2820", 38.5, -84.9, 140, "ccc402"));
+let s402 = (aero.status() as any).aerodatabox;
+check("402: not counted as spent credits", s402.creditsToday === before402, s402);
+check("402: status says to convert credits", /convert credits/.test(s402.message) && !!s402.creditsEmptySince, s402);
+check("402: falls back to the CSV route", last() === "SWA2820:adb_no_credits_csv", last());
+step(); calls.length = 0; await aero.lookup(ac("UAL1732", 41.9, -87.9, 150, "ccc403"));
+check("402: no AeroDataBox calls during the 15-minute wait", !calls.some(c => c.startsWith("/flights/callsign")), calls);
+adbStatus = 200; now += 16 * 60_000; calls.length = 0;
+await aero.lookup(ac("UAL1732", 41.9, -87.9, 150, "ccc404"));
+s402 = (aero.status() as any).aerodatabox;
+check("402: lookups resume after credits are converted, no restart", last() === "UAL1732:adb_route" && s402.creditsEmptySince === null, { d: last(), s402 });
+
 // --- key rejected
 adbStatus = 401; step(); calls.length = 0; await aero.lookup(ac("SWA2820", 38.5, -84.9, 140, "ffff01"));
-check("rejected key blocks AeroDataBox (falls back to CSV/FlightAware)", (aero.status() as any).aerodatabox.enabled === false, aero.status().aerodatabox);
+check("rejected key (401) blocks AeroDataBox (falls back to CSV/FlightAware)", (aero.status() as any).aerodatabox.enabled === false, aero.status().aerodatabox);
 
 // --- night window still respected
 now = Date.parse("2026-09-30T05:00:00Z"); calls.length = 0; adbStatus = 200;
